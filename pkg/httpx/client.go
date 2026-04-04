@@ -18,10 +18,11 @@ import (
 
 // Client wraps HTTP access with Bitbucket-aware defaults.
 type Client struct {
-	baseURL   *url.URL
-	username  string
-	password  string
-	userAgent string
+	baseURL     *url.URL
+	username    string
+	password    string
+	bearerToken string
+	userAgent   string
 
 	httpClient *http.Client
 
@@ -39,11 +40,12 @@ type Client struct {
 
 // Options configures a Client.
 type Options struct {
-	BaseURL   string
-	Username  string
-	Password  string
-	UserAgent string
-	Timeout   time.Duration
+	BaseURL     string
+	Username    string
+	Password    string
+	BearerToken string
+	UserAgent   string
+	Timeout     time.Duration
 
 	EnableCache bool
 	Retry       RetryPolicy
@@ -90,9 +92,10 @@ func New(opts Options) (*Client, error) {
 	}
 
 	client := &Client{
-		baseURL:  base,
-		username: strings.TrimSpace(opts.Username),
-		password: opts.Password,
+		baseURL:     base,
+		username:    strings.TrimSpace(opts.Username),
+		password:    opts.Password,
+		bearerToken: opts.BearerToken,
 		userAgent: func() string {
 			if opts.UserAgent != "" {
 				return opts.UserAgent
@@ -204,7 +207,9 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body any) 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.userAgent)
 
-	if c.username != "" || c.password != "" {
+	if c.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+	} else if c.username != "" || c.password != "" {
 		req.SetBasicAuth(c.username, c.password)
 	}
 
@@ -686,7 +691,9 @@ func (c *Client) NewMultipartRequest(ctx context.Context, method, path string, f
 		return io.NopCloser(bytes.NewReader(payload)), nil
 	}
 
-	if c.username != "" || c.password != "" {
+	if c.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+	} else if c.username != "" || c.password != "" {
 		req.SetBasicAuth(c.username, c.password)
 	}
 

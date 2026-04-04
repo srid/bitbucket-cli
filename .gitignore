@@ -27,3 +27,4 @@ bin/
 !.agents/skills/**
 .agent-mail/
 .amqrc
+result

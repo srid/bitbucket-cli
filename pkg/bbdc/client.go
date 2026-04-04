@@ -15,6 +15,7 @@ type Options struct {
 	BaseURL     string
 	Username    string
 	Token       string
+	BearerToken bool // Use Bearer auth instead of Basic auth
 	EnableCache bool
 	Retry       httpx.RetryPolicy
 }
@@ -35,14 +36,20 @@ func New(opts Options) (*Client, error) {
 		return nil, fmt.Errorf("base URL is required")
 	}
 
-	httpClient, err := httpx.New(httpx.Options{
+	httpOpts := httpx.Options{
 		BaseURL:     opts.BaseURL,
 		Username:    opts.Username,
 		Password:    opts.Token,
 		UserAgent:   "bkt-cli",
 		EnableCache: opts.EnableCache,
 		Retry:       opts.Retry,
-	})
+	}
+	if opts.BearerToken {
+		httpOpts.BearerToken = opts.Token
+		httpOpts.Username = ""
+		httpOpts.Password = ""
+	}
+	httpClient, err := httpx.New(httpOpts)
 	if err != nil {
 		return nil, err
 	}

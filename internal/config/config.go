@@ -44,6 +44,7 @@ type Host struct {
 	BaseURL            string `yaml:"base_url"`
 	Username           string `yaml:"username,omitempty"`
 	Token              string `yaml:"token,omitempty"`
+	BearerToken        bool   `yaml:"bearer_token,omitempty"` // Use Bearer auth instead of Basic
 	AllowInsecureStore bool   `yaml:"allow_insecure_store,omitempty"`
 }
 

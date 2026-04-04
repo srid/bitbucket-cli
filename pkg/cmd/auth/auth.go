@@ -50,6 +50,7 @@ type loginOptions struct {
 	Host               string
 	Username           string
 	Token              string
+	Bearer             bool
 	AllowInsecureStore bool
 	AllowHTTP          bool
 	Web                bool
@@ -75,6 +76,7 @@ func newLoginCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Kind, "kind", opts.Kind, "Bitbucket deployment kind (dc or cloud)")
 	cmd.Flags().StringVar(&opts.Username, "username", "", "Username (DC: PAT owner, Cloud: Atlassian email for API tokens)")
 	cmd.Flags().StringVar(&opts.Token, "token", "", "Authentication token (DC: PAT, Cloud: API token). WARNING: visible in process list and shell history; prefer the interactive prompt")
+	cmd.Flags().BoolVar(&opts.Bearer, "bearer", false, "Use Bearer token auth instead of Basic auth (required by some older DC instances)")
 	cmd.Flags().BoolVar(&opts.AllowInsecureStore, "allow-insecure-store", false, "Allow encrypted fallback secret storage when no OS keychain is available")
 	cmd.Flags().BoolVar(&opts.AllowHTTP, "allow-http", false, "Allow http:// URLs for login even though credentials will be sent in plaintext")
 	cmd.Flags().BoolVarP(&opts.Web, "web", "w", false, "Open browser to create token, then prompt for credentials")
@@ -159,13 +161,15 @@ func runLogin(cmd *cobra.Command, f *cmdutil.Factory, opts *loginOptions) error 
 			}
 		}
 
-		if opts.Username == "" {
-			if !isTerminal(ios.In) {
-				return fmt.Errorf("username is required when not running in a TTY")
-			}
-			opts.Username, err = promptString(reader, ios.Out, "Username (use x-token-auth for project/repo tokens)")
-			if err != nil {
-				return err
+		if !opts.Bearer {
+			if opts.Username == "" {
+				if !isTerminal(ios.In) {
+					return fmt.Errorf("username is required when not running in a TTY")
+				}
+				opts.Username, err = promptString(reader, ios.Out, "Username (use x-token-auth for project/repo tokens)")
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -180,9 +184,10 @@ func runLogin(cmd *cobra.Command, f *cmdutil.Factory, opts *loginOptions) error 
 		}
 
 		client, err := bbdc.New(bbdc.Options{
-			BaseURL:  baseURL,
-			Username: opts.Username,
-			Token:    opts.Token,
+			BaseURL:     baseURL,
+			Username:    opts.Username,
+			Token:       opts.Token,
+			BearerToken: opts.Bearer,
 		})
 		if err != nil {
 			return err
@@ -191,9 +196,28 @@ func runLogin(cmd *cobra.Command, f *cmdutil.Factory, opts *loginOptions) error 
 		ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 		defer cancel()
 
-		user, err := client.CurrentUser(ctx, opts.Username)
-		if err != nil {
-			return fmt.Errorf("verify credentials: %w", err)
+		var displayName, userName string
+		if opts.Bearer {
+			// Bearer auth: verify by fetching application properties (no username needed)
+			req, verr := client.HTTP().NewRequest(ctx, "GET", "/rest/api/1.0/application-properties", nil)
+			if verr != nil {
+				return fmt.Errorf("verify credentials: %w", verr)
+			}
+			var props struct {
+				Version string `json:"version"`
+			}
+			if verr := client.HTTP().Do(req, &props); verr != nil {
+				return fmt.Errorf("verify credentials: %w", verr)
+			}
+			displayName = "bearer-token"
+			userName = "bearer-token"
+		} else {
+			user, verr := client.CurrentUser(ctx, opts.Username)
+			if verr != nil {
+				return fmt.Errorf("verify credentials: %w", verr)
+			}
+			displayName = user.FullName
+			userName = user.Name
 		}
 
 		if err := storeHostToken(hostKey, opts.Token, opts.AllowInsecureStore); err != nil {
@@ -204,6 +228,7 @@ func runLogin(cmd *cobra.Command, f *cmdutil.Factory, opts *loginOptions) error 
 			Kind:               "dc",
 			BaseURL:            baseURL,
 			Username:           opts.Username,
+			BearerToken:        opts.Bearer,
 			AllowInsecureStore: opts.AllowInsecureStore,
 		})
 
@@ -211,7 +236,7 @@ func runLogin(cmd *cobra.Command, f *cmdutil.Factory, opts *loginOptions) error 
 			return err
 		}
 
-		if _, err := fmt.Fprintf(ios.Out, "✓ Logged in to %s as %s (%s)\n", baseURL, user.FullName, user.Name); err != nil {
+		if _, err := fmt.Fprintf(ios.Out, "✓ Logged in to %s as %s (%s)\n", baseURL, displayName, userName); err != nil {
 			return err
 		}
 	case "cloud":

@@ -22,6 +22,7 @@ func NewDCClient(host *config.Host) (*bbdc.Client, error) {
 		BaseURL:     host.BaseURL,
 		Username:    host.Username,
 		Token:       host.Token,
+		BearerToken: host.BearerToken,
 		EnableCache: true,
 		Retry: httpx.RetryPolicy{
 			MaxAttempts:    4,
